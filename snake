@@ -1,0 +1,99 @@
+#!/usr/bin/env python
+
+from collections import namedtuple
+from glob import glob
+import subprocess
+import sys
+from typing import Dict
+import webbrowser
+
+
+def do_clean() -> None:
+    subprocess.run(["rm", "-fr", ".mypy_cache"])
+    subprocess.run(["rm", "-fr", ".pytest_cache"])
+    subprocess.run(["rm", "-fr", "build"])
+    subprocess.run(["rm", "-fr", "dist"])
+    subprocess.run(["rm", "-fr", "htmlcov"])
+    subprocess.run(["find", "tests", "-name", "__pycache__", "-exec", "rm", "-fr", "{}", "+"])
+    subprocess.run(["find", "zn", "-name", "__pycache__", "-exec", "rm", "-fr", "{}", "+"])
+    subprocess.run(["rm", "-fr", "zn.egg-info"])
+    subprocess.run(["rm", "-fr", ".coverage"])
+
+
+def do_coverage() -> None:
+    do_clean()
+    subprocess.run(["pytest", "--cov=zn", "--cov-report=html", "--no-cov-on-fail", "tests"])
+    webbrowser.open_new_tab("htmlcov/index.html")
+
+
+def do_dist() -> None:
+    do_clean()
+    do_rebuild()
+    subprocess.run(["python", "setup.py", "sdist", "bdist_wheel"])
+
+
+def do_lint() -> None:
+    flake8_cmd = ["flake8"]
+    mypy_cmd = ["mypy", "--strict", "--allow-subclassing-any"]
+    subprocess.run(flake8_cmd + ["tests"])
+    # TODO: Maybe when pytest has a mypy library stub
+    # subprocess.run(mypy_cmd + ["tests"])
+    subprocess.run(flake8_cmd + ["zn"])
+    subprocess.run(mypy_cmd + ["zn"])
+
+
+def do_publish() -> None:
+    do_dist()
+    subprocess.run(["twine", "upload", "--repository-url", "https://test.pypi.org/legacy/"] + glob("dist/*"))
+
+
+def do_rebuild() -> None:
+    do_clean()
+    subprocess.run(["pytest", "tests"])
+    do_lint()
+
+
+def do_test() -> None:
+    do_clean()
+    subprocess.run(["pytest", "tests"])
+
+
+Task = namedtuple("Task", ["name", "description", "action"])
+tasks: Dict[str, Task] = {}
+
+
+def define_task(task: Task) -> None:
+    tasks[task.name] = task
+
+
+if __name__ == "__main__":
+    # define tasks
+    define_task(Task("clean", "Remove build cruft", do_clean))
+    define_task(Task("coverage", "Perform coverage analysis", do_coverage))
+    define_task(Task("dist", "Create a distribution tarball and wheel", do_dist))
+    define_task(Task("lint", "Run static analysis tools", do_lint))
+    define_task(Task("publish", "Publish the module to Test PyPI", do_publish))
+    define_task(Task("rebuild", "Test and lint the module", do_rebuild))
+    define_task(Task("test", "Test the module", do_test))
+
+    # if the user didn't supply a task
+    if len(sys.argv) < 2:
+        # provide a menu of tasks to run
+        print("Try one of the following tasks:\n")
+        task_list = list(tasks.keys())
+        task_list.sort()
+        for name in task_list:
+            print(f"snake {name:20} # {tasks[name].description}")
+        sys.exit(1)
+
+    # the first supplied argument is the task to be run
+    task_name = sys.argv[1]
+
+    # if the user supplied a task that wasn't defined
+    if task_name not in tasks:
+        # tell them and show them how to get the menu
+        print(f"No such task: {task_name}\n\nTo see a list of all tasks/options, run 'snake'")
+        sys.exit(1)
+
+    # run the task function that the user identified
+    tasks[task_name].action()
